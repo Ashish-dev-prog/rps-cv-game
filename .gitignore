@@ -1,0 +1,15 @@
+# Auto-downloaded model file — not needed in the repo (app.py fetches it)
+hand_landmarker.task
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
