@@ -16,17 +16,18 @@ from game_logic import Score
 # ---------------------------------------------------------------------------
 
 C = {
-    "bg_panel":   (15,  15,  18),   # near-black card background
-    "border":     (50,  50,  60),   # subtle panel border
-    "white":      (245, 245, 250),
-    "dim":        (130, 130, 140),
-    "green":      (80,  230, 110),  # win
-    "red":        (70,   70, 235),  # lose
-    "amber":      (40,  195, 255),  # draw / warning
-    "neon_blue":  (255, 190,  55),  # accent / countdown arc
-    "rock":       (190,  90, 220),  # Rock gesture colour
-    "paper":      (255, 175,  55),  # Paper
-    "scissors":   (55,  225, 225),  # Scissors
+    "bg_panel":   (12,  12,  18),    # near-black card background
+    "border":     (45,  45,  58),    # subtle panel border
+    "border_hi":  (70,  70,  90),    # highlighted border
+    "white":      (245, 245, 252),
+    "dim":        (120, 120, 135),
+    "green":      (75,  235, 105),   # win
+    "red":        (65,   65, 230),   # lose
+    "amber":      (38,  195, 255),   # draw / warning
+    "neon":       (255, 185,  50),   # accent / arcs
+    "rock":       (195,  85, 225),   # Rock gesture
+    "paper":      (255, 175,  50),   # Paper gesture
+    "scissors":   (50,  230, 230),   # Scissors gesture
 }
 
 GESTURE_COLOUR = {
@@ -36,25 +37,18 @@ GESTURE_COLOUR = {
     "Unknown":  C["dim"],
 }
 
-RESULT_COLOUR = {
-    "win":  C["green"],
-    "lose": C["red"],
-    "draw": C["amber"],
-}
 
 FONT        = cv2.FONT_HERSHEY_DUPLEX
 FONT_BOLD   = cv2.FONT_HERSHEY_TRIPLEX
 FONT_PLAIN  = cv2.FONT_HERSHEY_SIMPLEX
-
-GESTURE_ICON = {"Rock": "[R]", "Paper": "[P]", "Scissors": "[S]", "Unknown": "[?]"}
 
 
 # ---------------------------------------------------------------------------
 # Drawing primitives
 # ---------------------------------------------------------------------------
 
-def _blend_rect(frame, x1, y1, x2, y2, colour, alpha=0.72):
-    """Alpha-blended filled rectangle over the live frame."""
+def _blend(frame, x1, y1, x2, y2, colour, alpha=0.72):
+    """Alpha-blended filled rectangle."""
     h, w = frame.shape[:2]
     x1, y1 = max(0, x1), max(0, y1)
     x2, y2 = min(w - 1, x2), min(h - 1, y2)
@@ -67,153 +61,172 @@ def _blend_rect(frame, x1, y1, x2, y2, colour, alpha=0.72):
     frame[y1:y2, x1:x2] = roi
 
 
-def _border_rect(frame, x1, y1, x2, y2, colour, thickness=1):
-    """Thin border rectangle — no fill."""
-    cv2.rectangle(frame, (x1, y1), (x2, y2), colour, thickness, cv2.LINE_AA)
+def _border(frame, x1, y1, x2, y2, colour, thick=1):
+    cv2.rectangle(frame, (x1, y1), (x2, y2), colour, thick, cv2.LINE_AA)
 
 
-def _text_centered(frame, text, cx, cy, font, scale, colour, thickness=1):
-    """Draw text horizontally centred on cx."""
-    (tw, th), _ = cv2.getTextSize(text, font, scale, thickness)
+def _text_center(frame, text, cx, cy, font, scale, colour, thick=1):
+    (tw, th), _ = cv2.getTextSize(text, font, scale, thick)
     cv2.putText(frame, text, (cx - tw // 2, cy + th // 2),
-                font, scale, colour, thickness, cv2.LINE_AA)
+                font, scale, colour, thick, cv2.LINE_AA)
 
 
-def _text_shadowed(frame, text, x, y, font, scale, colour, thickness=1):
-    """Text with a dark 1-pixel offset shadow for contrast."""
+def _text_shadow(frame, text, x, y, font, scale, colour, thick=1):
     cv2.putText(frame, text, (x + 1, y + 1), font, scale,
-                (10, 10, 12), thickness + 1, cv2.LINE_AA)
-    cv2.putText(frame, text, (x, y), font, scale, colour, thickness, cv2.LINE_AA)
+                (8, 8, 10), thick + 1, cv2.LINE_AA)
+    cv2.putText(frame, text, (x, y), font, scale, colour, thick, cv2.LINE_AA)
+
+
+def _glow_dot(frame, cx, cy, outer_r, inner_r, outer_col, inner_col):
+    """Bright dot with a glow halo — used on arc tips."""
+    cv2.circle(frame, (cx, cy), outer_r, outer_col, -1, cv2.LINE_AA)
+    cv2.circle(frame, (cx, cy), inner_r, inner_col,  -1, cv2.LINE_AA)
 
 
 # ---------------------------------------------------------------------------
 # HUD components
 # ---------------------------------------------------------------------------
 
-def draw_score_panel(frame: np.ndarray, score: Score, ai_smart: bool) -> None:
-    """Top-left score card: player score, CPU score, AI mode badge."""
-    x1, y1, x2, y2 = 10, 10, 310, 100
-    _blend_rect(frame, x1, y1, x2, y2, C["bg_panel"], alpha=0.82)
-    _border_rect(frame, x1, y1, x2, y2, C["border"])
+def draw_score_panel(frame: np.ndarray, score: Score, smart: bool) -> None:
+    """Top-left score card: player / CPU / draw + mode badge."""
+    x1, y1, x2, y2 = 10, 10, 318, 108
 
-    # Score numbers
-    cv2.putText(frame, "YOU", (22, 38), FONT_PLAIN, 0.5, C["dim"], 1, cv2.LINE_AA)
-    cv2.putText(frame, str(score.player), (22, 65), FONT_BOLD, 1.0, C["green"], 2, cv2.LINE_AA)
+    # Panel background with a subtle left accent bar
+    _blend(frame, x1, y1, x2, y2, C["bg_panel"], alpha=0.88)
+    _border(frame, x1, y1, x2, y2, C["border"])
+    cv2.rectangle(frame, (x1, y1), (x1 + 3, y2), C["neon"], -1)
 
-    cv2.putText(frame, "CPU", (120, 38), FONT_PLAIN, 0.5, C["dim"], 1, cv2.LINE_AA)
-    cv2.putText(frame, str(score.cpu), (120, 65), FONT_BOLD, 1.0, C["red"], 2, cv2.LINE_AA)
+    # Score columns
+    cols = [
+        ("YOU",  score.player, C["green"],  26),
+        ("CPU",  score.cpu,    C["red"],   126),
+        ("DRAW", score.draws,  C["amber"], 222),
+    ]
+    for label, val, col, lx in cols:
+        cv2.putText(frame, label,    (lx, 38), FONT_PLAIN, 0.46, C["dim"],  1, cv2.LINE_AA)
+        cv2.putText(frame, str(val), (lx, 72), FONT_BOLD,  1.05, col,       2, cv2.LINE_AA)
 
-    cv2.putText(frame, "DRAW", (210, 38), FONT_PLAIN, 0.5, C["dim"], 1, cv2.LINE_AA)
-    cv2.putText(frame, str(score.draws), (210, 65), FONT_BOLD, 1.0, C["amber"], 2, cv2.LINE_AA)
-
-    # Thin separator before AI badge
-    cv2.line(frame, (x1, y2 - 26), (x2, y2 - 26), C["border"], 1)
-    badge = "SMART AI  ON" if ai_smart else "RANDOM AI"
-    badge_col = C["neon_blue"] if ai_smart else C["dim"]
-    cv2.putText(frame, badge, (22, y2 - 9), FONT_PLAIN, 0.42, badge_col, 1, cv2.LINE_AA)
+    # Divider + mode badge
+    cv2.line(frame, (x1 + 4, y2 - 28), (x2, y2 - 28), C["border"], 1)
+    badge     = "SMART MODE  ON" if smart else "NORMAL MODE"
+    badge_col = C["neon"] if smart else C["dim"]
+    cv2.putText(frame, badge, (26, y2 - 10), FONT_PLAIN, 0.42, badge_col, 1, cv2.LINE_AA)
 
 
 def draw_gesture_label(frame: np.ndarray, gesture: str) -> None:
     """Detected gesture badge — top-left, below the score card."""
-    x1, y1, x2, y2 = 10, 110, 310, 155
-    _blend_rect(frame, x1, y1, x2, y2, C["bg_panel"], alpha=0.78)
-    _border_rect(frame, x1, y1, x2, y2, C["border"])
+    x1, y1, x2, y2 = 10, 118, 318, 162
+    _blend(frame, x1, y1, x2, y2, C["bg_panel"], alpha=0.82)
+    _border(frame, x1, y1, x2, y2, C["border"])
+    cv2.rectangle(frame, (x1, y1), (x1 + 3, y2), GESTURE_COLOUR.get(gesture, C["dim"]), -1)
 
     colour = GESTURE_COLOUR.get(gesture, C["dim"])
-    label  = f"GESTURE  {gesture.upper()}"
-    cv2.putText(frame, label, (22, 140), FONT_PLAIN, 0.58, colour, 1, cv2.LINE_AA)
+    label  = f"GESTURE   {gesture.upper()}"
+    cv2.putText(frame, label, (24, 147), FONT_PLAIN, 0.58, colour, 1, cv2.LINE_AA)
 
 
-def draw_ai_gesture_icon(frame: np.ndarray, gesture: str) -> None:
-    """CPU gesture badge in the top-right corner, shown during result phase."""
+def draw_cpu_badge(frame: np.ndarray, gesture: str) -> None:
+    """CPU move badge in the top-right corner, shown during result phase."""
     h, w = frame.shape[:2]
-    label = f"CPU  {gesture.upper()}"
+    label = f"CPU   {gesture.upper()}"
     (tw, _), _ = cv2.getTextSize(label, FONT_PLAIN, 0.58, 1)
-    x1, y1 = w - tw - 44, 10
-    x2, y2 = w - 10, 55
-    _blend_rect(frame, x1, y1, x2, y2, C["bg_panel"], alpha=0.82)
-    _border_rect(frame, x1, y1, x2, y2, C["border"])
+    x1, y1 = w - tw - 52, 10
+    x2, y2 = w - 10, 58
+    _blend(frame, x1, y1, x2, y2, C["bg_panel"], alpha=0.88)
+    _border(frame, x1, y1, x2, y2, C["border"])
+    cv2.rectangle(frame, (x2 - 3, y1), (x2, y2),
+                  GESTURE_COLOUR.get(gesture, C["white"]), -1)
     colour = GESTURE_COLOUR.get(gesture, C["white"])
-    cv2.putText(frame, label, (x1 + 12, y2 - 14), FONT_PLAIN, 0.58, colour, 1, cv2.LINE_AA)
+    cv2.putText(frame, label, (x1 + 14, y2 - 14), FONT_PLAIN, 0.58, colour, 1, cv2.LINE_AA)
 
 
 def draw_countdown(frame: np.ndarray, text: str, progress: float) -> None:
     """
-    Centred countdown display with a sweeping neon arc and animated glow ring.
+    Centred countdown with a sweeping neon arc, glow dot, and animated ring.
     progress is 0.0 → 1.0 over COUNTDOWN_SECS.
     """
     h, w = frame.shape[:2]
     cx, cy = w // 2, h // 2
+    R = 90
 
-    # Darken the entire centre strip so the countdown pops
-    _blend_rect(frame, 0, cy - 110, w, cy + 110, C["bg_panel"], alpha=0.55)
+    # Darken a wide strip so the countdown stands out over the webcam
+    _blend(frame, 0, cy - 130, w, cy + 130, C["bg_panel"], alpha=0.55)
 
-    # Outer dim track ring
-    cv2.ellipse(frame, (cx, cy), (160, 160), -90, 0, 360,
-                C["border"], 3, cv2.LINE_AA)
+    # Dim track ring
+    cv2.ellipse(frame, (cx, cy), (R, R), -90, 0, 360,
+                (30, 30, 42), 5, cv2.LINE_AA)
 
-    # Animated neon arc that fills as time progresses
+    # Progress arc — thick dark glow then thinner bright highlight
     end_angle = int(360 * progress)
-    # Draw in thick steps for a glow effect — thick dark then thinner bright
-    cv2.ellipse(frame, (cx, cy), (160, 160), -90, 0, end_angle,
-                C["neon_blue"], 8, cv2.LINE_AA)
-    cv2.ellipse(frame, (cx, cy), (160, 160), -90, 0, end_angle,
-                C["white"], 2, cv2.LINE_AA)
+    if end_angle > 0:
+        cv2.ellipse(frame, (cx, cy), (R, R), -90, 0, end_angle,
+                    C["neon"], 10, cv2.LINE_AA)
+        cv2.ellipse(frame, (cx, cy), (R, R), -90, 0, end_angle,
+                    C["white"], 2, cv2.LINE_AA)
 
-    # Text sits inside the ring
+        # Glow dot that rides the arc's leading edge
+        tip_rad = math.radians(-90 + end_angle)
+        tx = cx + int(R * math.cos(tip_rad))
+        ty = cy + int(R * math.sin(tip_rad))
+        _glow_dot(frame, tx, ty, 9, 5, C["white"], C["neon"])
+
+    # Label inside the ring
     font      = FONT_BOLD if text == "SHOOT!" else FONT
-    scale     = 1.8 if text == "SHOOT!" else 1.2
+    scale     = 1.85  if text == "SHOOT!" else 1.25
     text_col  = C["green"] if text == "SHOOT!" else C["white"]
-    _text_centered(frame, text, cx, cy, font, scale, text_col, 2)
+    thick     = 2
+    _text_center(frame, text, cx, cy, font, scale, text_col, thick)
 
-    # Small progress percentage below
+    # Small percentage below
     pct = f"{int(progress * 100)}%"
-    cv2.putText(frame, pct, (cx - 18, cy + 130),
+    cv2.putText(frame, pct, (cx - 18, cy + R + 22),
                 FONT_PLAIN, 0.45, C["dim"], 1, cv2.LINE_AA)
 
 
 def draw_result_panel(
     frame: np.ndarray,
     player_gesture: str,
-    ai_gesture:     str,
+    cpu_gesture:    str,
     result:         str,
 ) -> None:
     """Full-width result banner at the bottom of the frame."""
     h, w = frame.shape[:2]
-    panel_h = 140
+    panel_h = 148
     y1 = h - panel_h
 
-    # Tinted background — colour-coded by result
+    # Colour-coded tinted background
     if "Win" in result:
-        tint = (20, 55, 20)
+        tint = (18, 52, 18)
     elif "CPU" in result:
-        tint = (20, 20, 55)
+        tint = (18, 18, 52)
     else:
-        tint = (40, 40, 15)
-    _blend_rect(frame, 0, y1, w, h, tint, alpha=0.80)
-    cv2.line(frame, (0, y1), (w, y1), C["border"], 1)
+        tint = (38, 38, 12)
+
+    _blend(frame, 0, y1, w, h, tint, alpha=0.85)
+    cv2.line(frame, (0, y1), (w, y1), C["border_hi"], 1)
+
+    # Decorative accent line at top of panel
+    if "Win" in result:
+        accent = C["green"]
+    elif "CPU" in result:
+        accent = C["red"]
+    else:
+        accent = C["amber"]
+    cv2.line(frame, (0, y1), (w, y1), accent, 2)
 
     # "YOU  Rock  vs  CPU  Paper" line
     player_col = GESTURE_COLOUR.get(player_gesture, C["white"])
-    ai_col     = GESTURE_COLOUR.get(ai_gesture, C["white"])
+    cpu_col    = GESTURE_COLOUR.get(cpu_gesture, C["white"])
 
     mid = w // 2
-    _text_shadowed(frame, f"YOU  {player_gesture}", mid - 230, y1 + 42, FONT_PLAIN, 0.72, player_col)
-    _text_shadowed(frame, "vs",                     mid -  15, y1 + 42, FONT_PLAIN, 0.6,  C["dim"])
-    _text_shadowed(frame, f"CPU  {ai_gesture}",     mid +  32, y1 + 42, FONT_PLAIN, 0.72, ai_col)
+    _text_shadow(frame, f"YOU  {player_gesture}", mid - 238, y1 + 46, FONT_PLAIN, 0.74, player_col)
+    _text_shadow(frame, "vs",                     mid -  16, y1 + 46, FONT_PLAIN, 0.62, C["dim"])
+    _text_shadow(frame, f"CPU  {cpu_gesture}",    mid +  36, y1 + 46, FONT_PLAIN, 0.74, cpu_col)
 
-    # Separator
-    cv2.line(frame, (40, y1 + 58), (w - 40, y1 + 58), C["border"], 1)
+    cv2.line(frame, (48, y1 + 62), (w - 48, y1 + 62), C["border"], 1)
 
     # Big result label
-    if "Win" in result:
-        r_col  = C["green"]
-    elif "CPU" in result:
-        r_col  = C["red"]
-    else:
-        r_col  = C["amber"]
-
-    _text_centered(frame, result.upper(), mid, y1 + 105, FONT_BOLD, 1.1, r_col, 2)
+    _text_center(frame, result.upper(), mid, y1 + 108, FONT_BOLD, 1.15, accent, 2)
 
 
 def draw_no_hand_warning(frame: np.ndarray) -> None:
@@ -221,31 +234,34 @@ def draw_no_hand_warning(frame: np.ndarray) -> None:
     h, w = frame.shape[:2]
     cx, cy = w // 2, h // 2
     text = "Show your hand to start"
-    (tw, th), _ = cv2.getTextSize(text, FONT_PLAIN, 0.75, 1)
-    pad = 20
-    _blend_rect(frame, cx - tw // 2 - pad, cy - th - pad,
-                       cx + tw // 2 + pad, cy + th + pad,
-                C["bg_panel"], alpha=0.78)
-    _border_rect(frame, cx - tw // 2 - pad, cy - th - pad,
-                        cx + tw // 2 + pad, cy + th + pad, C["amber"])
-    _text_centered(frame, text, cx, cy, FONT_PLAIN, 0.75, C["amber"], 1)
+    (tw, th), _ = cv2.getTextSize(text, FONT_PLAIN, 0.76, 1)
+    pad = 22
+    _blend(frame,
+           cx - tw // 2 - pad, cy - th - pad,
+           cx + tw // 2 + pad, cy + th + pad,
+           C["bg_panel"], alpha=0.82)
+    _border(frame,
+            cx - tw // 2 - pad, cy - th - pad,
+            cx + tw // 2 + pad, cy + th + pad,
+            C["amber"])
+    _text_center(frame, text, cx, cy, FONT_PLAIN, 0.76, C["amber"])
 
 
 def draw_waiting_indicator(frame: np.ndarray, gesture: str) -> None:
-    """Subtle prompt shown while gesture is detected but countdown hasn't fired yet."""
+    """Subtle hint while gesture is detected but countdown hasn't fired yet."""
     h, w = frame.shape[:2]
     text = "Hold steady — countdown starting..."
     (tw, _), _ = cv2.getTextSize(text, FONT_PLAIN, 0.55, 1)
-    _text_shadowed(frame, text, (w - tw) // 2, h - 160, FONT_PLAIN, 0.55, C["dim"])
+    _text_shadow(frame, text, (w - tw) // 2, h - 165, FONT_PLAIN, 0.55, C["dim"])
 
 
 def draw_controls_hint(frame: np.ndarray) -> None:
     """Keyboard shortcut bar pinned to the very bottom edge."""
     h, w = frame.shape[:2]
-    _blend_rect(frame, 0, h - 22, w, h, C["bg_panel"], alpha=0.70)
-    hints = "Q  Quit      R  Reset Score      S  Toggle Smart AI"
+    _blend(frame, 0, h - 24, w, h, C["bg_panel"], alpha=0.75)
+    hints = "Q  Quit      R  Reset Score      S  Toggle Smart Mode"
     (tw, _), _ = cv2.getTextSize(hints, FONT_PLAIN, 0.40, 1)
-    cv2.putText(frame, hints, ((w - tw) // 2, h - 6),
+    cv2.putText(frame, hints, ((w - tw) // 2, h - 7),
                 FONT_PLAIN, 0.40, C["dim"], 1, cv2.LINE_AA)
 
 
@@ -254,15 +270,14 @@ def draw_fps(frame: np.ndarray, fps: float) -> None:
     h, w = frame.shape[:2]
     label = f"{fps:.0f} fps"
     (tw, _), _ = cv2.getTextSize(label, FONT_PLAIN, 0.38, 1)
-    cv2.putText(frame, label, (w - tw - 10, h - 28),
+    cv2.putText(frame, label, (w - tw - 12, h - 32),
                 FONT_PLAIN, 0.38, C["dim"], 1, cv2.LINE_AA)
 
 
 def draw_round_flash(frame: np.ndarray, result: str, age: float) -> None:
     """
-    Optional full-screen colour flash right at the moment of SHOOT.
-    age = seconds since the result was determined (0 → 0.25 s).
-    Fades from 0.45 → 0 alpha quickly.
+    Full-screen colour flash at the moment of SHOOT.
+    age = seconds since result (fades over 0.25 s).
     """
     if age > 0.25:
         return
@@ -272,5 +287,5 @@ def draw_round_flash(frame: np.ndarray, result: str, age: float) -> None:
         tint = C["red"]
     else:
         tint = C["amber"]
-    alpha = 0.45 * (1.0 - age / 0.25)
-    _blend_rect(frame, 0, 0, frame.shape[1], frame.shape[0], tint, alpha=alpha)
+    alpha = 0.48 * (1.0 - age / 0.25)
+    _blend(frame, 0, 0, frame.shape[1], frame.shape[0], tint, alpha=alpha)

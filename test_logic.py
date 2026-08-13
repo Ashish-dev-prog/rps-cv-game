@@ -54,7 +54,7 @@ g.reset_score()
 assert g.score.player == 0 and g.score.cpu == 0
 print("PASS: Score reset")
 
-# Smart AI toggle
+# Smart Mode toggle
 prev = g.ai.smart_mode
 smart = g.toggle_ai_mode()
 assert smart != prev

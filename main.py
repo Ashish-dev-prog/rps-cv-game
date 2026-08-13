@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+main.py  —  Rock Paper Scissors, Computer Vision edition.
+
+Keys: Q quit · R reset score · S toggle Smart Mode
+"""
+
 import cv2
 import time
 from enum import Enum, auto
@@ -5,31 +12,19 @@ from enum import Enum, auto
 from hand_tracker       import HandTracker
 from gesture_classifier import GestureClassifier, UNKNOWN
 from game_logic         import GameLogic
-from ui_overlay         import (
-    draw_score_panel,
-    draw_gesture_label,
-    draw_countdown,
-    draw_result_panel,
-    draw_controls_hint,
-    draw_no_hand_warning,
-    draw_ai_gesture_icon,
-    draw_fps,
-    draw_waiting_indicator,
-    draw_round_flash,
-)
+import ui_overlay as ui
 
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-CAMERA_INDEX        = 1      # index 1 = real webcam (0 is grabbed by Smart Connect)
+CAMERA_INDEX        = 1      # change to 0 if webcam doesn't open
 FRAME_WIDTH         = 960
 FRAME_HEIGHT        = 540
 COUNTDOWN_SECS      = 3.0
 RESULT_DISPLAY_SECS = 3.0
 
-# Text shown at each quarter of the countdown timer
 COUNTDOWN_LABELS = [
     (0.00, "Rock..."),
     (0.25, "Paper..."),
@@ -54,7 +49,7 @@ class GameState(Enum):
 # ---------------------------------------------------------------------------
 
 class RPSGame:
-    """Top-level class: wires the webcam, detector, classifier, logic and HUD."""
+    """Wires the webcam, detector, classifier, logic and HUD together."""
 
     def __init__(self) -> None:
         self.tracker    = HandTracker()
@@ -66,7 +61,7 @@ class RPSGame:
         self.result_start    = 0.0
 
         self.player_gesture = UNKNOWN
-        self.ai_gesture     = UNKNOWN
+        self.cpu_gesture    = UNKNOWN
         self.round_result   = ""
 
         self.prev_frame_time = time.time()
@@ -77,7 +72,7 @@ class RPSGame:
         if cap is None:
             return
 
-        print("[INFO] Game running. Q=quit  R=reset  S=smart AI toggle")
+        print("[INFO] Game running. Q=quit  R=reset  S=toggle Smart Mode")
 
         try:
             while True:
@@ -109,7 +104,7 @@ class RPSGame:
                     print("[INFO] Score reset.")
                 elif key == ord('s'):
                     smart = self.game.toggle_ai_mode()
-                    print(f"[INFO] AI mode: {'SMART' if smart else 'RANDOM'}")
+                    print(f"[INFO] Smart Mode {'ON' if smart else 'OFF'}")
         finally:
             cap.release()
             self.tracker.release()
@@ -130,15 +125,13 @@ class RPSGame:
         elif self.state == GameState.COUNTDOWN:
             elapsed = now - self.countdown_start
             if gesture == UNKNOWN:
-                # Hand left the frame — cancel and go back to idle
                 self.state = GameState.WAITING
             elif elapsed / COUNTDOWN_SECS >= 1.0:
                 self.state = GameState.SHOOT
 
         elif self.state == GameState.SHOOT:
-            # Latch whatever gesture is visible right now
             self.player_gesture = gesture if gesture != UNKNOWN else "Rock"
-            self.ai_gesture, self.round_result = self.game.play_round(self.player_gesture)
+            self.cpu_gesture, self.round_result = self.game.play_round(self.player_gesture)
             self.result_start = now
             self.state = GameState.RESULT
 
@@ -153,18 +146,18 @@ class RPSGame:
     def _render(self, frame, gesture: str) -> None:
         now = time.time()
 
-        # Persistent HUD elements
-        draw_score_panel(frame, self.game.score, self.game.ai.smart_mode)
-        draw_gesture_label(frame, gesture)
-        draw_controls_hint(frame)
-        draw_fps(frame, self.fps)
+        # Persistent HUD
+        ui.draw_score_panel(frame, self.game.score, self.game.ai.smart_mode)
+        ui.draw_gesture_label(frame, gesture)
+        ui.draw_controls_hint(frame)
+        ui.draw_fps(frame, self.fps)
 
         # State-specific overlays
         if self.state == GameState.WAITING:
             if gesture == UNKNOWN:
-                draw_no_hand_warning(frame)
+                ui.draw_no_hand_warning(frame)
             else:
-                draw_waiting_indicator(frame, gesture)
+                ui.draw_waiting_indicator(frame, gesture)
 
         elif self.state == GameState.COUNTDOWN:
             progress = min((now - self.countdown_start) / COUNTDOWN_SECS, 1.0)
@@ -172,13 +165,13 @@ class RPSGame:
             for threshold, text in COUNTDOWN_LABELS:
                 if progress >= threshold:
                     label = text
-            draw_countdown(frame, label, progress)
+            ui.draw_countdown(frame, label, progress)
 
         elif self.state == GameState.RESULT:
             age = now - self.result_start
-            draw_round_flash(frame, self.round_result, age)   # brief colour flash
-            draw_result_panel(frame, self.player_gesture, self.ai_gesture, self.round_result)
-            draw_ai_gesture_icon(frame, self.ai_gesture)
+            ui.draw_round_flash(frame, self.round_result, age)
+            ui.draw_result_panel(frame, self.player_gesture, self.cpu_gesture, self.round_result)
+            ui.draw_cpu_badge(frame, self.cpu_gesture)
 
         cv2.imshow("Rock Paper Scissors — CV Edition", frame)
 
@@ -188,10 +181,9 @@ class RPSGame:
 
     def _open_camera(self):
         """
-        Open the webcam. cv2.VideoCapture doesn't raise — it returns a dud
-        object on failure, so we always check isOpened().
-        CAP_DSHOW forces Windows DirectShow, which respects the device index
-        reliably when virtual cameras (Smart Connect, OBS, etc.) are present.
+        Open the webcam. cv2.VideoCapture doesn't raise on failure — it returns
+        a dud object, so we always check isOpened().
+        CAP_DSHOW forces Windows DirectShow for reliable device indexing.
         """
         try:
             cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
@@ -211,8 +203,6 @@ class RPSGame:
             print(f"[ERROR] Camera open failed: {e}")
             return None
 
-
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     RPSGame().run()
